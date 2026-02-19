@@ -15,7 +15,7 @@ export default function SignupCard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setError("");
 
@@ -37,7 +37,7 @@ export default function SignupCard() {
     setLoading(true);
 
     try {
-      await api.post("/users", { name, email, password });
+      await api.post("/users", { name, email, password }, { timeout: 30000 });
       router.push("/login?registered=true");
     } catch (err: unknown) {
       if (

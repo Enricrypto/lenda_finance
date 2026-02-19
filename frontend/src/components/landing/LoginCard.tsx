@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Icon } from "@iconify/react";
 import Link from "next/link";
 
@@ -11,6 +11,8 @@ const DEMO_PASSWORD = "password123";
 
 export default function LoginCard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const registered = searchParams.get("registered") === "true";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -56,6 +58,14 @@ export default function LoginCard() {
 
         {/* Form content */}
         <div className="p-8">
+          {/* Registration success banner */}
+          {registered && (
+            <div className="mb-6 p-3 bg-green-500/10 border border-green-500/20 rounded-lg flex items-center gap-3">
+              <Icon icon="solar:check-circle-linear" className="text-green-400 shrink-0" width={20} />
+              <p className="text-xs text-green-300">Account created! Sign in to continue.</p>
+            </div>
+          )}
+
           {/* Header */}
           <div className="mb-8 text-center">
             <h2 className="text-2xl font-semibold text-white tracking-tight">
