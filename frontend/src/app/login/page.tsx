@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import BackgroundAmbience from "@/components/landing/BackgroundAmbience";
 import LendaLogo from "@/components/landing/LendaLogo";
 import FeatureCard from "@/components/landing/FeatureCard";
@@ -60,7 +61,9 @@ export default function LoginPage() {
 
         {/* Right Panel: Login */}
         <div className="lg:col-span-5">
-          <LoginCard />
+          <Suspense>
+            <LoginCard />
+          </Suspense>
         </div>
       </main>
     </div>
