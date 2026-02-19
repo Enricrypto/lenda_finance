@@ -1,8 +1,9 @@
 interface LendaLogoProps {
   size?: "sm" | "md";
+  textColor?: string;
 }
 
-export default function LendaLogo({ size = "md" }: LendaLogoProps) {
+export default function LendaLogo({ size = "md", textColor = "text-white" }: LendaLogoProps) {
   const iconSize = size === "sm" ? "w-5 h-5" : "w-6 h-6";
   const boxSize = size === "sm" ? "w-8 h-8" : "w-10 h-10";
   const textSize = size === "sm" ? "text-xl" : "text-2xl";
@@ -24,7 +25,7 @@ export default function LendaLogo({ size = "md" }: LendaLogoProps) {
           <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
         </svg>
       </div>
-      <span className={`font-bold ${textSize} tracking-tight text-white`}>
+      <span className={`font-bold ${textSize} tracking-tight ${textColor}`}>
         Lenda
       </span>
     </div>
