@@ -1,0 +1,23 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# pytest
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+
+# PostgreSQL data (Docker volumes)
+postgres_data/
+
+# macOS
+.DS_Store

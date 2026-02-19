@@ -1,0 +1,24 @@
+# Python virtual environments
+venv/
+.venv/
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+
+# pytest
+.pytest_cache/
+
+# PostgreSQL data (Docker volumes)
+postgres_data/
+
+# SQLite test databases
+*.db
+
+# Stale root-level requirements (real one is in backend/)
+/requirements.txt
+
+# Claude
+.claude/
