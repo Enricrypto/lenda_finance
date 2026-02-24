@@ -134,11 +134,10 @@ export default function LoginCard() {
               className="w-full bg-white text-black font-semibold py-2.5 rounded-lg hover:bg-slate-200 focus:ring-2 focus:ring-white/20 transition-all shadow-lg shadow-white/5 flex items-center justify-center gap-2 relative overflow-hidden cursor-pointer disabled:opacity-70"
             >
               {loading ? (
-                <Icon
-                  icon="solar:spinner-linear"
-                  className="animate-spin"
-                  width={20}
-                />
+                <>
+                  <Icon icon="solar:spinner-linear" className="animate-spin" width={18} />
+                  <span>Signing in…</span>
+                </>
               ) : (
                 <>
                   <span>Sign In</span>
