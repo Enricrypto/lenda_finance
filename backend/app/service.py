@@ -14,7 +14,7 @@ from .rules import ALLOWED_ASSET_TYPES, ASSET_DEFAULT_RATES, LoanStatus
 from typing import Dict
 from passlib.context import CryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=10)
 
 # ----------------
 # Custom Exceptions
