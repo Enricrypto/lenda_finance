@@ -1,183 +1,150 @@
 "use client";
 
-import Link from "next/link";
+import { useSession } from "next-auth/react";
 import { Icon } from "@iconify/react";
-import { useAggregateStats } from "@/hooks/useAggregateStats";
+import { useMyPosition } from "@/hooks/usePositions";
+import { useAssets } from "@/hooks/useAssets";
+import { useLoans } from "@/hooks/useLoans";
 import StatsCard from "@/components/shared/StatsCard";
 import LoadingSpinner from "@/components/shared/LoadingSpinner";
-import { formatCurrency } from "@/lib/formatters";
-import { ASSET_TYPE_CONFIG } from "@/lib/constants";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import LoanStatusBadge from "@/components/shared/LoanStatusBadge";
+import { formatCurrency, formatDate, formatPercent } from "@/lib/formatters";
+import { ASSET_TYPE_CONFIG, ASSET_TYPES } from "@/lib/constants";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
-const TOOLTIP_STYLE = {
-  backgroundColor: "#141414",
-  border: "1px solid rgba(255,255,255,0.06)",
-  borderRadius: "8px",
-  color: "#e4e4e7",
-};
+const PIE_COLORS = ["#22d3ee", "#f59e0b", "#10b981"];
+const TOOLTIP_STYLE = { backgroundColor: "#141414", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "8px", color: "#e4e4e7" };
 
 export default function OverviewPage() {
-  const { isLoading, totalDeposited, totalBorrowed, netYield, userCount, users, assets, loans } = useAggregateStats();
+  const { data: session } = useSession();
+  const { data: position, isLoading: posLoading } = useMyPosition();
+  const { data: assets, isLoading: assetsLoading } = useAssets();
+  const { data: loans } = useLoans();
 
-  if (isLoading) return <LoadingSpinner />;
+  if (posLoading || assetsLoading) return <LoadingSpinner />;
 
-  const chartData = (users ?? []).map((user) => {
-    const userAssets = assets?.filter((a) => a.user_id === user.id) ?? [];
-    const userLoans = loans?.filter((l) => l.user_id === user.id) ?? [];
-    const deposited = userAssets.reduce((s, a) => s + a.value, 0);
-    const borrowed = userLoans.reduce((s, l) => {
-      if (l.status === "repaid") return s;
-      return s + Math.max(l.amount - l.amount_repaid, 0);
-    }, 0);
-    return { name: user.name.split(" ")[0], Deposits: deposited, Loans: borrowed };
-  });
+  const hf = position?.health_factor;
+  const hfDisplay = hf === null || hf === undefined || hf > 99 ? "∞" : hf.toFixed(2);
+  const hfColor = (hf === null || hf === undefined || hf > 99) ? "text-emerald-400" : hf >= 1.2 ? "text-emerald-400" : hf >= 1.0 ? "text-amber-400" : "text-red-400";
+  const ltv = position?.ltv;
+  const ltvPct = ltv !== null && ltv !== undefined ? Math.min(ltv * 100, 100) : 0;
+  const ltvColor = ltvPct > 80 ? "bg-red-500" : ltvPct > 60 ? "bg-amber-500" : "bg-emerald-500";
 
-  const maxBorrow = totalDeposited * 0.5;
-  const utilization = maxBorrow > 0 ? (totalBorrowed / maxBorrow) * 100 : 0;
-  const riskLevel = utilization > 80 ? "High" : utilization > 50 ? "Medium" : "Low";
-  const riskColor = utilization > 80 ? "text-red-400" : utilization > 50 ? "text-amber-400" : "text-emerald-400";
+  const pieData = ASSET_TYPES.map((type) => ({
+    name: ASSET_TYPE_CONFIG[type].label,
+    value: assets?.filter((a) => a.type === type).reduce((s, a) => s + a.stated_value, 0) ?? 0,
+  })).filter((d) => d.value > 0);
 
-  const assetsByType = Object.entries(ASSET_TYPE_CONFIG).map(([type, config]) => ({
-    type, label: config.label,
-    total: assets?.filter((a) => a.type === type).reduce((s, a) => s + a.value, 0) ?? 0,
-  }));
-
-  const topUsers = [...(users ?? [])]
-    .map((user) => {
-      const userAssets = assets?.filter((a) => a.user_id === user.id) ?? [];
-      const userLoans = loans?.filter((l) => l.user_id === user.id) ?? [];
-      const deposited = userAssets.reduce((s, a) => s + a.value, 0);
-      const borrowed = userLoans.reduce((s, l) => {
-        if (l.status === "repaid") return s;
-        return s + Math.max(l.amount - l.amount_repaid, 0);
-      }, 0);
-      return { ...user, deposited, borrowed };
-    })
-    .sort((a, b) => b.deposited - a.deposited)
-    .slice(0, 5);
+  const activeLoans = loans?.filter((l) => l.status === "active").slice(0, 3) ?? [];
 
   return (
     <>
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Financial Overview</h1>
-          <p className="text-sm text-zinc-500 mt-1">Global performance metrics for assets and loans.</p>
-        </div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-white">Welcome back, {session?.user?.name?.split(" ")[0]}</h1>
+        <p className="text-sm text-zinc-500 mt-1">Your personal financial position</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatsCard label="Total Assets Deposited" value={formatCurrency(totalDeposited)} icon="mdi:wallet" iconBg="bg-cyan-500/10" iconColor="text-cyan-400" />
-        <StatsCard label="Total Borrowed" value={formatCurrency(totalBorrowed)} icon="mdi:arrow-down-circle" iconBg="bg-orange-500/10" iconColor="text-orange-400" />
-        <StatsCard label="Platform Net Yield" value={formatCurrency(netYield)} icon="mdi:percent" iconBg="bg-emerald-500/10" iconColor="text-emerald-400" />
-        <StatsCard label="Total Users" value={String(userCount)} icon="mdi:account-group" iconBg="bg-blue-500/10" iconColor="text-blue-400" />
+        <StatsCard label="Total Deposited"     value={formatCurrency(position?.total_deposited ?? 0)}            icon="mdi:wallet"            iconBg="bg-cyan-500/10"    iconColor="text-cyan-400" />
+        <StatsCard label="Eligible Collateral" value={formatCurrency(position?.total_eligible_collateral ?? 0)}  icon="mdi:shield-check"      iconBg="bg-blue-500/10"    iconColor="text-blue-400" />
+        <StatsCard label="Outstanding Debt"    value={formatCurrency((position?.total_borrowed ?? 0) + (position?.total_interest ?? 0))} icon="mdi:arrow-down-circle" iconBg="bg-orange-500/10" iconColor="text-orange-400" />
+        <StatsCard label="Available Credit"    value={formatCurrency(position?.available_credit ?? 0)}           icon="mdi:credit-card"       iconBg="bg-emerald-500/10" iconColor="text-emerald-400" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        {/* Bar Chart */}
-        <div className="lg:col-span-2 bg-surface rounded-xl border border-white/6 p-6">
-          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-6">Assets vs Loans by User</h3>
-          {chartData.length === 0 ? (
-            <div className="h-64 flex items-center justify-center text-zinc-600 text-sm">No data yet</div>
-          ) : (
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} barGap={4}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#52525b" }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 12, fill: "#52525b" }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} contentStyle={TOOLTIP_STYLE} />
-                  <Bar dataKey="Deposits" fill="#22d3ee" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Loans" fill="#3f3f46" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+        <div className="bg-surface rounded-xl border border-white/6 p-6 flex flex-col justify-between">
+          <div>
+            <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Health Factor</p>
+            <h3 className={`text-5xl font-semibold tracking-tight mt-2 ${hfColor}`}>{hfDisplay}</h3>
+            <p className="text-xs text-zinc-600 mt-2">
+              {(hf === null || hf === undefined || hf > 99) ? "No active debt — fully healthy" : hf >= 1.2 ? "Position is healthy" : hf >= 1.0 ? "Warning: approaching liquidation threshold" : "Under-collateralised"}
+            </p>
+          </div>
+          <div className="mt-6">
+            <div className="flex justify-between items-end mb-2">
+              <span className="text-xs text-zinc-500">LTV Ratio</span>
+              <span className="text-sm font-semibold text-white">{ltvPct.toFixed(1)}%</span>
             </div>
-          )}
-          <div className="mt-4 flex items-center justify-center gap-6">
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-cyan-400" /><span className="text-xs text-zinc-500">Deposits</span></div>
-            <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-zinc-600" /><span className="text-xs text-zinc-500">Borrowed</span></div>
+            <div className="w-full bg-white/6 rounded-full h-1.5">
+              <div className={`h-1.5 rounded-full transition-all ${ltvColor}`} style={{ width: `${ltvPct}%` }} />
+            </div>
+            <div className="mt-4 space-y-2 text-xs text-zinc-600">
+              <div className="flex justify-between"><span>Collateral</span><span className="text-zinc-400">{formatCurrency(position?.total_eligible_collateral ?? 0)}</span></div>
+              <div className="flex justify-between"><span>Debt + Interest</span><span className="text-zinc-400">{formatCurrency((position?.total_borrowed ?? 0) + (position?.total_interest ?? 0))}</span></div>
+              <div className="flex justify-between"><span>Net Yield</span><span className="text-emerald-400">{formatCurrency(position?.yield_earned ?? 0)}</span></div>
+            </div>
           </div>
         </div>
 
-        {/* Risk Factor Card */}
-        <div className="bg-surface rounded-xl border border-white/6 p-6 flex flex-col justify-between">
-          <div>
-            <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-1">Risk Factor</p>
-            <h3 className={`text-4xl font-semibold tracking-tight mt-2 ${riskColor}`}>{riskLevel}</h3>
-          </div>
-          <div className="mt-8">
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-xs text-zinc-500">Collateral Utilization</span>
-              <span className="text-sm font-semibold text-white">{utilization.toFixed(0)}%</span>
+        <div className="lg:col-span-2 bg-surface rounded-xl border border-white/6 p-6">
+          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-4">Asset Distribution</h3>
+          {pieData.length === 0 ? (
+            <div className="h-56 flex items-center justify-center text-zinc-600 text-sm">No assets yet</div>
+          ) : (
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
+                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v) => formatCurrency(Number(v))} contentStyle={TOOLTIP_STYLE} />
+                  <Legend formatter={(v) => <span style={{ color: "#71717a" }}>{v}</span>} />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-            <div className="w-full bg-white/6 rounded-full h-1.5">
-              <div
-                className={`h-1.5 rounded-full transition-all ${utilization > 80 ? "bg-red-500" : utilization > 50 ? "bg-amber-500" : "bg-emerald-500"}`}
-                style={{ width: `${Math.min(utilization, 100)}%` }}
-              />
-            </div>
-            <div className="mt-6 space-y-3">
-              {assetsByType.map((item) => (
-                <div key={item.type} className="flex items-center justify-between text-sm">
-                  <span className="flex items-center gap-2 text-zinc-500">
-                    <Icon icon={ASSET_TYPE_CONFIG[item.type].icon} className="w-4 h-4" />
-                    {item.label}
-                  </span>
-                  <span className="text-zinc-300">{formatCurrency(item.total)}</span>
+          )}
+          <div className="mt-4 grid grid-cols-3 gap-3">
+            {ASSET_TYPES.map((type) => {
+              const count = assets?.filter((a) => a.type === type).length ?? 0;
+              const val = assets?.filter((a) => a.type === type).reduce((s, a) => s + a.stated_value, 0) ?? 0;
+              return (
+                <div key={type} className="bg-white/4 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Icon icon={ASSET_TYPE_CONFIG[type].icon} className={`w-4 h-4 ${ASSET_TYPE_CONFIG[type].color.split(" ")[0]}`} />
+                    <span className="text-xs text-zinc-500">{ASSET_TYPE_CONFIG[type].label}</span>
+                  </div>
+                  <p className="text-sm font-medium text-white">{formatCurrency(val)}</p>
+                  <p className="text-xs text-zinc-600">{count} asset{count !== 1 ? "s" : ""}</p>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      {/* Top Users Table */}
-      <div className="bg-surface rounded-xl border border-white/6 overflow-hidden">
-        <div className="p-6 border-b border-white/6 flex justify-between items-center">
-          <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Top Users</h3>
-          <Link href="/users" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">View all →</Link>
-        </div>
-        {topUsers.length === 0 ? (
-          <div className="p-6 text-center text-sm text-zinc-600">No users yet</div>
-        ) : (
+      {activeLoans.length > 0 && (
+        <div className="bg-surface rounded-xl border border-white/6 overflow-hidden">
+          <div className="p-6 border-b border-white/6">
+            <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">Active Loans</h3>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead className="bg-white/4 text-zinc-500 text-xs uppercase tracking-wider">
                 <tr>
-                  <th className="px-6 py-4 font-medium">User</th>
-                  <th className="px-6 py-4 font-medium">Assets</th>
-                  <th className="px-6 py-4 font-medium">Loans</th>
-                  <th className="px-6 py-4 text-right font-medium">Action</th>
+                  <th className="px-6 py-4 font-medium">Amount</th>
+                  <th className="px-6 py-4 font-medium">Repaid</th>
+                  <th className="px-6 py-4 font-medium">Interest</th>
+                  <th className="px-6 py-4 font-medium">LTV</th>
+                  <th className="px-6 py-4 font-medium">Status</th>
+                  <th className="px-6 py-4 font-medium">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/4 text-sm">
-                {topUsers.map((user) => {
-                  const initials = user.name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-                  return (
-                    <tr key={user.id} className="hover:bg-white/3 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-400 font-medium text-xs">{initials}</div>
-                          <div>
-                            <p className="font-medium text-white">{user.name}</p>
-                            <p className="text-xs text-zinc-500">{user.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-zinc-300">{formatCurrency(user.deposited)}</td>
-                      <td className="px-6 py-4 text-zinc-500">{formatCurrency(user.borrowed)}</td>
-                      <td className="px-6 py-4 text-right">
-                        <Link href={`/users/${user.id}`} className="text-zinc-600 hover:text-cyan-400 transition-colors">
-                          <Icon icon="mdi:chevron-right" className="w-5 h-5 inline" />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {activeLoans.map((loan) => (
+                  <tr key={loan.id} className="hover:bg-white/3 transition-colors">
+                    <td className="px-6 py-4 text-zinc-300">{formatCurrency(loan.amount)}</td>
+                    <td className="px-6 py-4 text-emerald-400">{formatCurrency(loan.amount_repaid)}</td>
+                    <td className="px-6 py-4 text-amber-400">{formatCurrency(loan.accrued_interest)}</td>
+                    <td className="px-6 py-4 text-zinc-500">{loan.ltv_at_origination !== null ? formatPercent(loan.ltv_at_origination) : "—"}</td>
+                    <td className="px-6 py-4"><LoanStatusBadge status={loan.status} /></td>
+                    <td className="px-6 py-4 text-zinc-500">{formatDate(loan.created_at)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </>
   );
 }

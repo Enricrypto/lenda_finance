@@ -37,7 +37,7 @@ export default function SignupCard() {
     setLoading(true);
 
     try {
-      await api.post("/users", { name, email, password }, { timeout: 30000 });
+      await api.post("/auth/register", { name, email, password }, { timeout: 30000 });
       router.push("/login?registered=true");
     } catch (err: unknown) {
       if (

@@ -1,73 +1,35 @@
-// src/hooks/useLoans.ts
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import * as loansService from "@/lib/services/loans"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import * as loansService from "@/lib/services/loans";
+import type { RequestLoanPayload } from "@/types";
 
-// -------------------------
-// Fetch all loans
-// -------------------------
 export function useLoans() {
-  return useQuery({
-    queryKey: ["loans"],
-    queryFn: loansService.getLoans
-  })
+  return useQuery({ queryKey: ["loans"], queryFn: loansService.getLoans });
 }
 
-// -------------------------
-// Fetch loans for a single user
-// -------------------------
-export function useUserLoans(userId: string) {
-  return useQuery({
-    queryKey: ["loans", userId],
-    queryFn: () => loansService.getUserLoans(userId),
-    enabled: !!userId
-  })
+export function useEvaluateLoan() {
+  return useMutation({
+    mutationFn: (p: RequestLoanPayload) => loansService.evaluateLoan(p),
+  });
 }
 
-// -------------------------
-// Request a loan
-// -------------------------
 export function useRequestLoan() {
-  const queryClient = useQueryClient()
-
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: loansService.requestLoan,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["loans"] })
-      queryClient.invalidateQueries({
-        queryKey: ["positions", variables.user_id]
-      })
-    }
-  })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+      queryClient.invalidateQueries({ queryKey: ["position"] });
+    },
+  });
 }
 
-// -------------------------
-// Repay a single loan
-// -------------------------
 export function useRepayLoan() {
-  const queryClient = useQueryClient()
-
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: loansService.repayLoan,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["loans"] })
-      queryClient.invalidateQueries({
-        queryKey: ["positions", variables.userId]
-      })
-    }
-  })
-}
-
-// -------------------------
-// Repay multiple loans
-// -------------------------
-export function useRepayLoansBatch() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: loansService.repayLoansBatch,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["loans"] })
-      queryClient.invalidateQueries({ queryKey: ["positions"] })
-    }
-  })
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+      queryClient.invalidateQueries({ queryKey: ["position"] });
+    },
+  });
 }

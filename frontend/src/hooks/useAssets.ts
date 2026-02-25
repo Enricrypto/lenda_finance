@@ -1,31 +1,22 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { getAssets, createAsset } from "@/lib/services/assets"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getAssets, previewAsset, createAsset } from "@/lib/services/assets";
+import type { CreateAssetPayload } from "@/types";
 
-// Fetch all assets
 export function useAssets() {
-  return useQuery({
-    queryKey: ["assets"],
-    queryFn: getAssets
-  })
+  return useQuery({ queryKey: ["assets"], queryFn: getAssets });
 }
 
-// Filter assets for a specific user
-export function useUserAssets(userId: string) {
-  const { data: allAssets, ...rest } = useAssets()
-  const filtered = allAssets?.filter((a) => a.user_id === userId)
-  return { data: filtered, ...rest }
+export function usePreviewAsset() {
+  return useMutation({ mutationFn: (p: CreateAssetPayload) => previewAsset(p) });
 }
 
-// Create a new asset
 export function useCreateAsset() {
-  const queryClient = useQueryClient()
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createAsset,
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["assets"] })
-      queryClient.invalidateQueries({
-        queryKey: ["positions", variables.user_id]
-      })
-    }
-  })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      queryClient.invalidateQueries({ queryKey: ["position"] });
+    },
+  });
 }
