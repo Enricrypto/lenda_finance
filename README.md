@@ -2,7 +2,7 @@
 
 A personal asset-backed lending platform. Deposit collateral, borrow against it, and track your financial position in real time.
 
-**Live demo:** [lenda.vercel.app](https://lenda.vercel.app) — `demo@lenda.com / password123`
+**Live demo:** [lenda.vercel.app]([https://lenda-finance.vercel.app/]) — `demo@lenda.com / password123`
 
 ---
 
