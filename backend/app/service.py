@@ -1,335 +1,238 @@
-# Service Layer
-# ----------------
-# Handles business logic:
-# - Validations
-# - Rules (loan max amount, positive values)
-# - Calculations (positions)
-# Controller calls this layer. Repository handles DB ops.
-
+"""
+Service Layer — orchestrates business logic for assets, loans, and positions.
+Auth logic lives in auth_service.py.
+"""
+from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy.orm import Session
-from .models import User, Asset, Loan
-from .schemas import UserCreate, AssetCreate, PositionResponse
-from .repository import add_user, add_asset, get_loan, add_loan, get_user, get_user_by_email, list_assets, list_loans
-from .rules import ALLOWED_ASSET_TYPES, ASSET_DEFAULT_RATES, LoanStatus
-from typing import Dict
-from passlib.context import CryptContext
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=10)
+from .models import Asset, Loan
+from .schemas import PositionResponse
+from .repository import (
+    add_asset, add_loan, get_loan,
+    list_assets, list_loans,
+)
+from .rules import LoanStatus, AssetStatus
+from .valuation_service import appraise
+from .risk_engine import (
+    evaluate_loan_eligibility,
+    calculate_health_factor,
+    calculate_ltv,
+    EvaluationResult,
+)
 
-# ----------------
+
+# ────────────────────────────────────────
 # Custom Exceptions
-# ----------------
+# ────────────────────────────────────────
 class NotFoundError(Exception):
-    """Raised when a requested resource (user, asset) is not found."""
     pass
 
-# ----------------
-# User Services
-# ----------------
-def create_user_service(db: Session, user_data: UserCreate) -> User:
-    """
-    Create a new user. Raises IntegrityError if email already exists.
-    Optionally hashes a password if provided.
-    """
-    password_hash = None
-    if hasattr(user_data, 'password') and user_data.password:
-        password_hash = pwd_context.hash(user_data.password)
-    user = User(name=user_data.name, email=user_data.email, password_hash=password_hash)
-    return add_user(db, user)
 
-def authenticate_user(db: Session, email: str, password: str) -> User:
-    """
-    Authenticate a user by email and password.
-    Raises NotFoundError if user not found or password is incorrect.
-    """
-    user = get_user_by_email(db, email)
-    if not user:
-        raise NotFoundError("Invalid email or password")
-    if not user.password_hash:
-        raise NotFoundError("Invalid email or password")
-    if not pwd_context.verify(password, user.password_hash):
-        raise NotFoundError("Invalid email or password")
-    return user
+class ForbiddenError(Exception):
+    pass
 
-# ----------------
+
+# ────────────────────────────────────────
 # Asset Services
-# ----------------
-def create_asset_service(db: Session, asset_data: AssetCreate) -> Asset:
-    """
-    Validate and create a new asset.
+# ────────────────────────────────────────
+def preview_asset(asset_type: str, stated_value: float):
+    """Valuation dry-run — no DB write."""
+    return appraise(asset_type, stated_value)
 
-    Business Rules:
-    - User must exist
-    - Asset value must be positive
-    - Asset type must be one of the allowed predefined types
-    - Asset type input is normalized (case-insensitive)
-    """
 
-    # ----------------------------
-    # Validate user exists
-    # ----------------------------
-    user = get_user(db, asset_data.user_id)
-    if not user:
-        raise NotFoundError("User not found")
+def create_asset(
+    db: Session,
+    user_id: str,
+    asset_type: str,
+    stated_value: float,
+    description: Optional[str] = None,
+) -> Asset:
+    # user_id is already validated by get_current_user dependency
+    valuation = appraise(asset_type, stated_value)
 
-    # ----------------------------
-    # Validate asset value
-    # ----------------------------
-    if asset_data.value <= 0:
-        raise ValueError("Asset value must be positive")
-
-    # ----------------------------
-    # Normalize + validate asset type
-    # ----------------------------
-    asset_type = asset_data.type.strip().lower()
-
-    if asset_type not in ALLOWED_ASSET_TYPES:
-        raise ValueError(
-            f"Invalid asset type '{asset_data.type}'. "
-            f"Allowed types: {ALLOWED_ASSET_TYPES}"
-        )
-
-    # ----------------------------
-    # Create asset
-    # ----------------------------
     asset = Asset(
-        user_id=asset_data.user_id,
-        type=asset_type,
-        value=asset_data.value
+        user_id=user_id,
+        type=valuation.asset_type,
+        description=description,
+        stated_value=stated_value,
+        appraised_value=valuation.appraised_value,
+        ltv_ratio=valuation.ltv_ratio,
+        status=AssetStatus.active.value,
+        appraised_at=datetime.now(timezone.utc),
     )
-
     return add_asset(db, asset)
 
-# ----------------
-# Loan Services
-# ----------------
-def calculate_max_borrow(db: Session, user_id: str) -> float:
-    """Calculate max loan amount based on user's assets (50% of total)."""
+
+def get_user_assets(db: Session, user_id: str) -> list[Asset]:
+    return list_assets(db, user_id)
+
+
+# ────────────────────────────────────────
+# Helpers — collateral and debt totals
+# ────────────────────────────────────────
+def _total_eligible_collateral(db: Session, user_id: str) -> float:
+    """Sum of appraised_value for ACTIVE and LOCKED assets."""
     assets = list_assets(db, user_id)
-    if assets is None:
-        raise NotFoundError("User not found")
-    return sum(a.value for a in assets) * 0.5
-
-def calculate_outstanding_debt(db: Session, user_id: str) -> float:
-    """
-    Total borrowed amount that is still outstanding.
-    Considers partial repayments using amount_repaid.
-    """
-    loans = list_loans(db, user_id)
-
     return sum(
-        max(loan.amount - loan.amount_repaid, 0.0)  # remaining debt per loan
-        for loan in loans
-        if loan.status != LoanStatus.repaid.value or loan.amount_repaid < loan.amount
+        a.appraised_value for a in assets
+        if a.status in (AssetStatus.active.value, AssetStatus.locked.value)
     )
 
-def calculate_available_credit(db: Session, user_id: str) -> float:
-    """
-    Remaining credit:
 
-    available_credit =
-        max_borrow - outstanding_debt
-    """
-    max_borrow = calculate_max_borrow(db, user_id)
-    debt = calculate_outstanding_debt(db, user_id)
+def _total_outstanding_debt(db: Session, user_id: str) -> float:
+    """Principal + accrued interest still owed on active loans."""
+    loans = list_loans(db, user_id)
+    return sum(
+        max((l.amount or 0.0) - (l.amount_repaid or 0.0), 0.0) + (l.accrued_interest or 0.0)
+        for l in loans
+        if l.status == LoanStatus.active.value
+    )
 
-    return max_borrow - debt
+
+def _compute_accrued_interest(loan: Loan) -> float:
+    """
+    Simple interest since activation: principal × rate × (days / 365).
+    Returns 0 if loan has no activated_at timestamp.
+    """
+    if not loan.activated_at:
+        return 0.0
+    reference = loan.activated_at
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - reference).days
+    principal_remaining = max((loan.amount or 0.0) - (loan.amount_repaid or 0.0), 0.0)
+    return principal_remaining * (loan.interest_rate or 0.05) * (days / 365.0)
+
+
+# ────────────────────────────────────────
+# Loan Services
+# ────────────────────────────────────────
+def evaluate_loan(db: Session, user_id: str, amount: float) -> EvaluationResult:
+    """Risk assessment dry-run — no DB write."""
+    eligible = _total_eligible_collateral(db, user_id)
+    debt     = _total_outstanding_debt(db, user_id)
+    return evaluate_loan_eligibility(amount, eligible, debt)
 
 
 def create_loan(db: Session, user_id: str, amount: float) -> Loan:
-    """
-    Validate and create a new loan.
+    # user_id is already validated by get_current_user dependency
+    eligible = _total_eligible_collateral(db, user_id)
+    debt     = _total_outstanding_debt(db, user_id)
+    result   = evaluate_loan_eligibility(amount, eligible, debt)
 
-    Business Rules:
-    - User must exist
-    - Loan amount must be positive
-    - User cannot borrow more than remaining available credit
+    now = datetime.now(timezone.utc)
 
-    Available credit is defined as:
-
-        available_credit =
-            (50% of total assets) - outstanding debt
-    """
-
-    # ----------------------------
-    # Validate user exists
-    # ----------------------------
-    user = get_user(db, user_id)
-    if not user:
-        raise NotFoundError("User not found")
-
-    # ----------------------------
-    # Validate loan amount
-    # ----------------------------
-    if amount <= 0:
-        raise ValueError("Loan amount must be positive")
-
-    # ----------------------------
-    # Compute remaining credit
-    # ----------------------------
-    available_credit = calculate_available_credit(db, user_id)
-
-    if available_credit <= 0:
-        raise ValueError("User has no available credit remaining")
-
-    # ----------------------------
-    # Enforce borrowing rule
-    # ----------------------------
-    if amount > available_credit:
-        raise ValueError(
-            f"Loan exceeds remaining available credit. "
-            f"Available: {available_credit}, Requested: {amount}"
+    if result.approved:
+        loan = Loan(
+            user_id=user_id,
+            amount=amount,
+            interest_rate=0.05,
+            status=LoanStatus.active.value,
+            ltv_at_origination=result.projected_ltv,
+            health_factor_snapshot=result.health_factor,
+            collateral_value_locked=eligible,
+            activated_at=now,
         )
-
-    # ----------------------------
-    # Create loan with defaults
-    # ----------------------------
-    loan = Loan(
-        user_id=user_id,
-        amount=amount,
-        interest_rate=0.05,
-        status = LoanStatus.approved.value
-    )
+    else:
+        loan = Loan(
+            user_id=user_id,
+            amount=amount,
+            interest_rate=0.05,
+            status=LoanStatus.rejected.value,
+            rejection_reason=result.rejection_reason,
+            ltv_at_origination=result.projected_ltv if result.projected_ltv != float("inf") else None,
+            health_factor_snapshot=result.health_factor if result.health_factor != float("inf") else None,
+            collateral_value_locked=eligible,
+        )
 
     return add_loan(db, loan)
 
-def repay_loan(db: Session, loan_id: str, amount: float) -> Loan:
-    """
-    Repay a loan partially or fully.
 
-    Business rules:
-    - Loan must exist
-    - Amount must be positive
-    - Cannot repay more than remaining debt
-    - Update status to 'repaid' if fully repaid
-    """
-
-    # Validate loan exists
+def repay_loan(db: Session, loan_id: str, user_id: str, amount: float) -> Loan:
     loan = get_loan(db, loan_id)
     if not loan:
         raise NotFoundError("Loan not found")
-
-    # ----------------------------
-    # Validate repayment amount
-    # ----------------------------
+    if loan.user_id != user_id:
+        raise ForbiddenError("Not your loan")
+    if loan.status != LoanStatus.active.value:
+        raise ValueError("Only active loans can be repaid")
     if amount <= 0:
         raise ValueError("Repayment amount must be positive")
 
-    remaining_debt = max(loan.amount - loan.amount_repaid, 0.0)
+    # Refresh accrued interest before repayment
+    loan.accrued_interest = _compute_accrued_interest(loan)
 
-    if amount > remaining_debt:
-        raise ValueError(
-            f"Repayment exceeds remaining debt. Remaining debt: {remaining_debt}, attempted repayment: {amount}"
-        )
+    # Waterfall: interest first, then principal
+    if amount <= loan.accrued_interest:
+        loan.accrued_interest -= amount
+    else:
+        remaining = amount - loan.accrued_interest
+        loan.accrued_interest = 0.0
+        principal_remaining = max(loan.amount - loan.amount_repaid, 0.0)
+        if remaining > principal_remaining:
+            raise ValueError(
+                f"Overpayment. Total outstanding: "
+                f"${principal_remaining + loan.accrued_interest:,.2f}"
+            )
+        loan.amount_repaid += remaining
 
-    # ----------------------------
-    # Update amount_repaid
-    # ----------------------------
-    loan.amount_repaid += amount
-
-    # ----------------------------
-    # Update status if fully repaid
-    # ----------------------------
-    if loan.amount_repaid >= loan.amount:
+    # Check full repayment
+    if loan.amount_repaid >= loan.amount and loan.accrued_interest <= 0:
         loan.status = LoanStatus.repaid.value
+        loan.repaid_at = datetime.now(timezone.utc)
 
     db.add(loan)
     db.commit()
     db.refresh(loan)
-
     return loan
 
 
-def repay_loans_batch(db: Session, repayments: list[Dict[str, float]]) -> list[Loan]:
-    """
-    Repay multiple loans in a single transaction.
+def get_user_loans(db: Session, user_id: str) -> list[Loan]:
+    return list_loans(db, user_id)
 
-    Parameters:
-    - repayments: List of dicts: [{"loan_id": str, "amount": float}, ...]
 
-    Returns:
-    - List of updated Loan objects
-    """
-    updated_loans = []
-
-    for repayment in repayments:
-        loan_id = repayment.get("loan_id")
-        amount = repayment.get("amount", 0.0)
-
-        # Call existing repay_loan service for each
-        updated_loan = repay_loan(db, loan_id, amount)
-        updated_loans.append(updated_loan)
-
-    return updated_loans
-
-# ----------------
-# Position / Dashboard Service
-# ----------------
+# ────────────────────────────────────────
+# Position / Dashboard
+# ────────────────────────────────────────
 def calculate_position(db: Session, user_id: str) -> PositionResponse:
-    """
-    Calculate a user's financial position dashboard.
-
-    This includes:
-    - Total deposited assets
-    - Total borrowed (outstanding debt, accounts for partial repayments)
-    - Available credit
-    - Yield earned minus interest on outstanding loans
-    """
-
-    # ----------------------------
-    # Validate user exists
-    # ----------------------------
-    user = get_user(db, user_id)
-    if not user:
-        raise NotFoundError("User not found")
-
-    # ----------------------------
-    # Load user assets
-    # ----------------------------
+    # user_id is already validated by get_current_user dependency
     assets = list_assets(db, user_id)
-    total_deposited = sum(a.value for a in assets)
+    loans  = list_loans(db, user_id)
 
-    # ----------------------------
-    # Load user loans
-    # ----------------------------
-    loans = list_loans(db, user_id)
-
-    # Remaining debt per loan
-    total_borrowed = sum(
-        max(loan.amount - loan.amount_repaid, 0.0) for loan in loans
+    total_deposited  = sum(a.stated_value for a in assets)
+    eligible         = sum(
+        a.appraised_value for a in assets
+        if a.status in (AssetStatus.active.value, AssetStatus.locked.value)
     )
 
-    available_credit = calculate_available_credit(db, user_id)
+    active_loans = [l for l in loans if l.status == LoanStatus.active.value]
+    total_principal  = sum(max(l.amount - l.amount_repaid, 0.0) for l in active_loans)
+    total_interest   = sum(_compute_accrued_interest(l) for l in active_loans)
+    total_debt       = total_principal + total_interest
+    available_credit = max(eligible - total_debt, 0.0)
 
-    # ----------------------------
-    # Yield earned (from assets)
-    # ----------------------------
-    # Let's assume 5% annual yield per asset for simplicity
-    yield_rate = 0.05
-    yield_earned = total_deposited * yield_rate
+    yield_rate   = 0.05
+    gross_yield  = total_deposited * yield_rate
+    net_yield    = gross_yield - total_interest
 
-    # ----------------------------
-    # Interest owed on outstanding loans
-    # ----------------------------
-    interest_owed = sum(
-        max(loan.amount - loan.amount_repaid, 0.0) * loan.interest_rate
-        for loan in loans
+    health_factor = (
+        calculate_health_factor(eligible, total_debt)
+        if total_debt > 0 else None
+    )
+    ltv = (
+        calculate_ltv(total_debt, eligible)
+        if eligible > 0 and total_debt > 0 else None
     )
 
-    # ----------------------------
-    # Net yield (optional: can just show gross yield)
-    # ----------------------------
-    net_yield = yield_earned - interest_owed
-
-    # ----------------------------
-    # Return dashboard response
-    # ----------------------------
     return PositionResponse(
         user_id=user_id,
         total_deposited=total_deposited,
-        total_borrowed=total_borrowed,
+        total_eligible_collateral=eligible,
+        total_borrowed=total_principal,
+        total_interest=total_interest,
         available_credit=available_credit,
-        yield_earned=net_yield
+        yield_earned=net_yield,
+        health_factor=health_factor,
+        ltv=ltv,
     )
-
-

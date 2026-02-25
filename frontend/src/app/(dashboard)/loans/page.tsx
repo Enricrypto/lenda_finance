@@ -33,8 +33,8 @@ export default function LoansPage() {
   const [repayError, setRepayError] = useState("");
 
   const filtered = statusFilter === "all" ? loans : loans?.filter((l) => l.status === statusFilter);
-  const totalOutstanding = loans?.reduce((s, l) => l.status === "active" ? s + Math.max(l.amount - l.amount_repaid, 0) + l.accrued_interest : s, 0) ?? 0;
-  const totalRepaid = loans?.reduce((s, l) => s + l.amount_repaid, 0) ?? 0;
+  const totalOutstanding = loans?.reduce((s, l) => l.status === "active" ? s + Math.max(l.amount - (l.amount_repaid ?? 0), 0) + (l.accrued_interest ?? 0) : s, 0) ?? 0;
+  const totalRepaid = loans?.reduce((s, l) => s + (l.amount_repaid ?? 0), 0) ?? 0;
   const activeLoanCount = loans?.filter((l) => l.status === "active").length ?? 0;
 
   const handleEvaluate = () => {
@@ -131,7 +131,7 @@ export default function LoansPage() {
                   </thead>
                   <tbody className="divide-y divide-white/4 text-sm">
                     {filtered.map((loan) => {
-                      const remaining = Math.max(loan.amount - loan.amount_repaid, 0) + loan.accrued_interest;
+                      const remaining = Math.max(loan.amount - (loan.amount_repaid ?? 0), 0) + (loan.accrued_interest ?? 0);
                       return (
                         <tr key={loan.id} className="hover:bg-white/3 transition-colors">
                           <td className="px-6 py-4 text-zinc-300">{formatCurrency(loan.amount)}</td>
