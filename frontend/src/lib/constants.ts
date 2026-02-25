@@ -1,15 +1,15 @@
 export const ASSET_TYPES = ["property", "crypto", "car"] as const;
 
 export const ASSET_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
-  property: { label: "Property", icon: "mdi:home-city", color: "text-blue-600 bg-blue-50" },
-  crypto: { label: "Crypto", icon: "mdi:bitcoin", color: "text-orange-600 bg-orange-50" },
-  car: { label: "Car", icon: "mdi:car", color: "text-emerald-600 bg-emerald-50" },
+  property: { label: "Property", icon: "mdi:home-city", color: "text-blue-400 bg-blue-500/10" },
+  crypto: { label: "Crypto", icon: "mdi:bitcoin", color: "text-orange-400 bg-orange-500/10" },
+  car: { label: "Car", icon: "mdi:car", color: "text-emerald-400 bg-emerald-500/10" },
 };
 
 export const LOAN_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  pending: { label: "Pending", color: "bg-yellow-50 text-yellow-700 border-yellow-100" },
-  approved: { label: "Active", color: "bg-emerald-50 text-emerald-700 border-emerald-100" },
-  repaid: { label: "Repaid", color: "bg-slate-50 text-slate-600 border-slate-200" },
+  pending: { label: "Pending", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  approved: { label: "Active", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  repaid: { label: "Repaid", color: "bg-zinc-800 text-zinc-500 border-zinc-700" },
 };
 
 export const NAV_ITEMS = [

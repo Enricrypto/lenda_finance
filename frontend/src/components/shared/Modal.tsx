@@ -34,12 +34,12 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-slate-100">
-          <h3 className="text-lg font-medium text-slate-900">{title}</h3>
+      <div className="bg-surface border border-white/8 rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b border-white/6">
+          <h3 className="text-lg font-medium text-white">{title}</h3>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+            className="p-1 text-zinc-600 hover:text-zinc-300 rounded cursor-pointer transition-colors"
           >
             <Icon icon="mdi:close" className="w-5 h-5" />
           </button>

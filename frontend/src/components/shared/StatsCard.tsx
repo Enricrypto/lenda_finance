@@ -18,7 +18,7 @@ export default function StatsCard({
   trend,
 }: StatsCardProps) {
   return (
-    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-surface p-6 rounded-xl border border-white/6 hover:border-white/10 transition-colors">
       <div className="flex items-center justify-between mb-4">
         <div className={`p-2 rounded-lg ${iconBg}`}>
           <Icon icon={icon} className={`w-6 h-6 ${iconColor}`} />
@@ -27,8 +27,8 @@ export default function StatsCard({
           <span
             className={`flex items-center text-xs font-medium px-2 py-1 rounded-full ${
               trend.positive
-                ? "text-emerald-600 bg-emerald-50"
-                : "text-red-600 bg-red-50"
+                ? "text-emerald-400 bg-emerald-500/10"
+                : "text-red-400 bg-red-500/10"
             }`}
           >
             {trend.value}
@@ -39,8 +39,8 @@ export default function StatsCard({
           </span>
         )}
       </div>
-      <p className="text-sm font-medium text-slate-500">{label}</p>
-      <h3 className="text-2xl font-semibold text-slate-900 mt-1 tracking-tight">
+      <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{label}</p>
+      <h3 className="text-2xl font-semibold text-white mt-1 tracking-tight">
         {value}
       </h3>
     </div>
